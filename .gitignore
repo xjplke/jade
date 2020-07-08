@@ -1,0 +1,7 @@
+/*
+!.gitignore
+!/**/*.go
+!/**/*.jade
+!/**/*.md
+!*.mod
+!*.sum

@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bytes"
+	"fmt"
 	"html/template"
+	"io/ioutil"
 	"log"
 	"net/http"
 
 	"github.com/Joker/hpp"
-	"github.com/Joker/jade"
+	"github.com/xjplke/jade"
 )
 
 func handler(w http.ResponseWriter, r *http.Request) {
@@ -29,8 +32,38 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func main() {
+func mainxx() {
 	log.Println("open  http://localhost:8080/")
 	http.HandleFunc("/", handler)
 	http.ListenAndServe(":8080", nil)
+}
+
+
+func main(){
+	bs, err := ioutil.ReadFile("index.jade")
+	if err != nil {
+		fmt.Print("ReadFile err:",err)
+		return
+	}
+
+	t := jade.New("index")
+
+	outTpl, err := t.Parse(bs)
+	if err != nil {
+		fmt.Print("Parse err:",err)
+		return
+	}
+	b := new(bytes.Buffer)
+	outTpl.WriteIn(b)
+
+	goTpl, e := template.New("html").Parse(b.String())
+	if e!=nil{
+		fmt.Println("go Template Parse err",e)
+	}
+
+	c := new(bytes.Buffer)
+	err = goTpl.Execute(c, &struct{}{})
+
+	fmt.Println(c.String())
+
 }

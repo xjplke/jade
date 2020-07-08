@@ -135,6 +135,15 @@ func (t *tree) Parse(text []byte) (tree *tree, err error) {
 	return t, nil
 }
 
+func (t *tree) ParsePage(text []byte) (tree *tree, err error) {
+	defer t.recover(&err)
+	t.lex = lex(t.Name, text)
+	t.text = string(text)
+	t.pageParse()
+	t.lex = nil
+	return t, nil
+}
+
 // New allocates a new parse tree with the given name.
 func New(name string) *tree {
 	return &tree{

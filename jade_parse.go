@@ -15,7 +15,19 @@ func (t *tree) topParse() {
 	)
 	if token.typ == itemExtends {
 		ext = true
-		t.Root.append(t.parseSubFile(token.val))
+		t.Root.append(t.parseSubFile(token.val))//parseSubFile最终也会调用topParse方法，但是在有extends的文件里面，逻辑稍有不同。
+												//基类文件的根节点，直接挂载到派生文件tree的root下面，这个没问题。
+												//派生文件对应的block内容怎么填充到基类文件的节点上的呢？
+												//派生文件parseBlock会直接把block的节点挂载到tree的block这个map上。基类文件的block节点内容是空的
+												//这里会建立起一个关联关系。  最后在输出代码的时候再使用这个关系
+												//mixin应该类似， 但是include是直接将节点挂载到
+												//如何动态load？  不从文件读取，预先创建tree，load 所有的mixin和block(layout)，然后再page里面使用mixin和block
+												//用户不需要关心block(layout)，默认使用content，直接在page里面使用已有的mixin来定制自己的页面就可以了！！
+												//不使用include，使用mixin代替。
+												//因为exend默认会去读文件，所以动态load不能让其读取文件，
+												//如果page页面不使用extend方法，只有一个block逻辑，那怎么保证layout的block节点正常处理？
+												// 				编写一个pageParse的方法，默认启用extend的标记？其他逻辑不变？？？
+
 		token = t.nextNonSpace()
 	}
 	for {
@@ -24,12 +36,13 @@ func (t *tree) topParse() {
 			t.Root.append(t.parseInclude(token))
 		case itemBlock, itemBlockPrepend, itemBlockAppend:
 			if ext {
-				t.parseBlock(token)
+				t.parseBlock(token)//有extends的情况，说明当前是在处理派生类。 没看明白处理基类文件和派生类文件的时候，相关的节点是怎么关联上去的？
 			} else {
-				t.Root.append(t.parseBlock(token))
+				t.Root.append(t.parseBlock(token))//没有extends的情况，说明是在parseSubFile中，在处理基类，通常是layout文件
+				//这里因为递归以及树的结构，实际extends也不一定要在最终的layout上
 			}
 		case itemMixin:
-			t.mixin[token.val] = t.parseMixin(token)
+			t.mixin[token.val] = t.parseMixin(token)//这里应该是mixin的声明， mixin的调用在哪儿呢？？？tree的hub函数中处理itemMixinCall
 		case itemEOF:
 			return
 		case itemExtends:
@@ -404,7 +417,7 @@ Loop:
 
 func (t *tree) parseBlock(tk item) *blockNode {
 	block := t.newList(tk.pos)
-	for {
+	for {//可以用同一段代码填充多个block？--- 应该是block下可以有多个平级的元素节点？
 		token := t.nextNonSpace()
 		if token.depth > tk.depth {
 			block.append(t.hub(token))
@@ -420,7 +433,7 @@ func (t *tree) parseBlock(tk item) *blockNode {
 	case itemBlockAppend:
 		suf = "_append"
 	}
-	t.block[tk.val+suf] = block
+	t.block[tk.val+suf] = block//将block的内容 挂载到tree的block下面， 这个block是一个map。
 	return t.newBlock(tk.pos, tk.val, tk.typ)
 }
 
@@ -441,16 +454,16 @@ func (t *tree) parseInclude(tk item) *listNode {
 func (t *tree) parseSubFile(path string) *listNode {
 	// log.Println("subtemplate: " + path)
 	currentTmplDir, _ := filepath.Split(t.Name)
-	var incTree = New(currentTmplDir + path)
-	incTree.block = t.block
+	var incTree = New(currentTmplDir + path)//处理extend的子文件时开了一个新的tree
+	incTree.block = t.block//继承了原tree的mixin和block
 	incTree.mixin = t.mixin
-	_, err := incTree.Parse(t.read(path))
+	_, err := incTree.Parse(t.read(path))//读取文件调用新的tree的Parse，这里相当于进行的递归的调用。。。。
 	if err != nil {
 		d, _ := os.Getwd()
 		t.errorf(`in '%s' subtemplate '%s': parseSubFile() error: %s`, d, path, err)
 	}
 
-	return incTree.Root
+	return incTree.Root//返回新tree的root
 }
 
 func (t *tree) read(path string) []byte {
@@ -480,4 +493,61 @@ func (t *tree) read(path string) []byte {
 		t.errorf(`%s  work dir: %s `, err, wd)
 	}
 	return bb
+}
+
+
+
+
+func (t *tree) pageParse() {
+	//t.Root = t.newList(t.peek().pos) //page是直接在原tree上处理block的内容，不能在这里把原tree手上的root覆盖了，实际在load layout的时候已经加的页面的root节点。
+	var (
+		ext   bool
+		token = t.nextNonSpace()
+	)
+	/*
+	if token.typ == itemExtends {
+		ext = true
+		t.Root.append(t.parseSubFile(token.val))//parseSubFile最终也会调用topParse方法，但是在有extends的文件里面，逻辑稍有不同。
+		//基类文件的根节点，直接挂载到派生文件tree的root下面，这个没问题。
+		//派生文件对应的block内容怎么填充到基类文件的节点上的呢？
+		//派生文件parseBlock会直接把block的节点挂载到tree的block这个map上。基类文件的block节点内容是空的
+		//这里会建立起一个关联关系。  最后在输出代码的时候再使用这个关系
+		//mixin应该类似， 但是include是直接将节点挂载到
+		//如何动态load？  不从文件读取，预先创建tree，load 所有的mixin和block(layout)，然后再page里面使用mixin和block
+		//用户不需要关心block(layout)，默认使用content，直接在page里面使用已有的mixin来定制自己的页面就可以了！！
+		//不使用include，使用mixin代替。
+		//因为exend默认会去读文件，所以动态load不能让其读取文件，
+		//如果page页面不使用extend方法，只有一个block逻辑，那怎么保证layout的block节点正常处理？
+		// 				编写一个pageParse的方法，默认启用extend的标记？其他逻辑不变？？？
+
+		token = t.nextNonSpace()
+	}*/
+	ext = true
+	for {
+		switch token.typ {
+		case itemInclude:
+			t.Root.append(t.parseInclude(token))
+		case itemBlock, itemBlockPrepend, itemBlockAppend:
+			if ext {
+				t.parseBlock(token)//有extends的情况，说明当前是在处理派生类。 没看明白处理基类文件和派生类文件的时候，相关的节点是怎么关联上去的？
+			} else {
+				t.Root.append(t.parseBlock(token))//没有extends的情况，说明是在parseSubFile中，在处理基类，通常是layout文件
+				//这里因为递归以及树的结构，实际extends也不一定要在最终的layout上
+			}
+		case itemMixin:
+			t.mixin[token.val] = t.parseMixin(token)//这里应该是mixin的声明， mixin的调用在哪儿呢？？？tree的hub函数中处理itemMixinCall
+		case itemEOF:
+			return
+		case itemExtends:
+			t.errorf(`Declaration of template inheritance ("extends") should be the first thing in the file. There can only be one extends statement per file.`)
+		case itemError:
+			t.errorf("%s line: %d\n", token.val, token.line)
+		default:
+			if ext {
+				t.errorf(`Only import, named blocks and mixins can appear at the top level of an extending template`)
+			}
+			t.Root.append(t.hub(token))
+		}
+		token = t.nextNonSpace()
+	}
 }
